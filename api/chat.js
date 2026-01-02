@@ -1,52 +1,43 @@
-// server.js
-const express = require('express');
-const cors = require('cors');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-const app = express();
-app.use(express.json());
-app.use(cors()); // Разрешаем запросы с твоего сайта
-
-// Инициализация Gemini
-const genAI = new GoogleGenerativeAI(process.env.AIzaSyCnop14QjAHhW_-i_OcOhPS4kebBSlZJBE);
+// Инициализируем AI вне основной функции для скорости
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-// --- КОНТЕКСТ БОТА (Сюда мы вынесли знания из твоего HTML) ---
-const SYSTEM_PROMPT = `
-Ты — вежливый, немного дерзкий и мотивирующий помощник тренера по боксу Алексея Климцева.
-Твоя цель — отвечать на вопросы потенциальных учеников и записывать их на тренировку.
-Используй Emoji, будь краток и дружелюбен.
+const SYSTEM_PROMPT = `Ты — вежливый помощник тренера по боксу Алексея Климцева. 
+Отвечай кратко, используй эмодзи. 
+Если человек хочет записаться, в конце сообщения добавь тег [LEAD_GEN_TRIGGER]`;
 
-ИНФОРМАЦИЯ О КЛУБЕ:
-- Тренер: Алексей Климцев, Мастер спорта.
-- Адрес: г. Сургут, ул. Энергетиков 47, 2-й блок (вход со двора). Парковка бесплатная.
-- Расписание Группы: Вт, Чт (20:00), Сб (13:00).
-- Цены: Разовая - бесплатно, Абонемент (12 зан.) - 5000р.
-- Экипировка: С собой шорты/футболка, кроссовки. Перчатки на первое время дадим.
-- Девушки: Да, тренируем. Бесконтактный фитнес-бокс или спарринги по желанию.
+module.exports = async (req, res) => {
+    // 1. Настройка заголовков (CORS), чтобы сайт мог достучаться до API
+    res.setHeader('Access-Control-Allow-Credentials', true);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+    res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
 
-ВАЖНО:
-1. Если спрашивают "как записаться" или выражают желание прийти — отвечай кратко и добавляй в конце фразы специальный тег: [LEAD_GEN_TRIGGER]
-2. Не придумывай информацию, которой нет в этом тексте.
-`;
+    // 2. Обработка предварительного запроса браузера
+    if (req.method === 'OPTIONS') {
+        res.status(200).end();
+        return;
+    }
 
-app.post('/api/chat', async (req, res) => {
+    // 3. Проверка, что это POST запрос
+    if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Нужен POST запрос' });
+    }
+
     try {
         const { message, history } = req.body;
 
-        // Формируем историю чата для нейросети
+        if (!message) {
+            return res.status(400).json({ error: 'Сообщение пустое' });
+        }
+
         const chat = model.startChat({
             history: [
-                {
-                    role: "user",
-                    parts: [{ text: SYSTEM_PROMPT }],
-                },
-                {
-                    role: "model",
-                    parts: [{ text: "Понял! Я готов помогать будущим чемпионам. Жду вопросов." }],
-                },
-                // Сюда можно добавить предыдущие сообщения из req.body.history, если нужно помнить контекст диалога
-                ...history.map(msg => ({
+                { role: "user", parts: [{ text: SYSTEM_PROMPT }] },
+                { role: "model", parts: [{ text: "Принято. Я готов отвечать!" }] },
+                ...(history || []).map(msg => ({
                     role: msg.sender === 'user' ? 'user' : 'model',
                     parts: [{ text: msg.text }]
                 }))
@@ -57,14 +48,11 @@ app.post('/api/chat', async (req, res) => {
         const response = await result.response;
         const text = response.text();
 
-        res.json({ reply: text });
+        // 4. Отправляем ответ
+        res.status(200).json({ reply: text });
 
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ reply: "Извините, тренер сейчас на ринге и не может ответить. Попробуйте позже!" });
+        console.error('Ошибка Gemini:', error);
+        res.status(500).json({ reply: "Ошибка нейросети. Проверьте API ключ в настройках Vercel." });
     }
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
+};
