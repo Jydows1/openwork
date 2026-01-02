@@ -7,38 +7,50 @@ module.exports = async (req, res) => {
 
     try {
         const { message } = req.body;
-        const apiKey = process.env.GEMINI_API_KEY;
 
-        // ИСПОЛЬЗУЕМ v1 (Стабильную) вместо v1beta
-        const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{
-                    parts: [{ text: `Ты помощник тренера по боксу. Ответь кратко: ${message}` }]
-                }]
-            })
-        });
+        // Обращаемся к модели Qwen через API Hugging Face
+        const response = await fetch(
+            "https://api-inference.huggingface.co/models/Qwen/Qwen2.5-7B-Instruct",
+            {
+                headers: {
+                    Authorization: `Bearer ${process.env.HUGGINGFACE_TOKEN}`,
+                    "Content-Type": "application/json",
+                },
+                method: "POST",
+                body: JSON.stringify({
+                    inputs: `<|im_start|>system
+Ты помощник тренера по боксу Алексея Климцева. Отвечай кратко на русском языке. Используй эмодзи 🥊.<|im_end|>
+<|im_start|>user
+${message}<|im_end|>
+<|im_start|>assistant`,
+                    parameters: {
+                        max_new_tokens: 300,
+                        return_full_text: false,
+                        temperature: 0.7
+                    }
+                }),
+            }
+        );
 
         const data = await response.json();
 
-        if (data.error) {
-            // Если v1 не сработала, пробуем вывести почему
-            console.error('Google API Error:', data.error);
-            return res.status(data.error.code || 500).json({ 
-                reply: "Извините, сервис временно недоступен.",
-                debug: data.error.message 
+        // Если модель только проснулась (cold start)
+        if (data.error && data.error.includes("loading")) {
+            return res.status(503).json({ 
+                reply: "🥊 ИИ на разминке (модель загружается). Повторите вопрос через 15 секунд!" 
             });
         }
 
-        const botReply = data.candidates?.[0]?.content?.parts?.[0]?.text || "Я не знаю, что ответить.";
+        // Вытаскиваем текст ответа
+        let botReply = data[0]?.generated_text || "Тренер сейчас на спарринге, попробуйте позже.";
+        
+        // Убираем технические хвосты, если они есть
+        botReply = botReply.replace(/<\|im_end\|>/g, '').trim();
+
         res.status(200).json({ reply: botReply });
 
     } catch (error) {
-        console.error('Fetch Error:', error);
-        res.status(500).json({ reply: "Произошла ошибка при связи с ИИ." });
+        console.error('Ошибка Qwen:', error);
+        res.status(500).json({ reply: "Произошла ошибка связи с залом." });
     }
 };
-
