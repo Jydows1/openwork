@@ -1,5 +1,5 @@
 {
-  "name": "boxing-bot",
-  "version": "1.0.0",
-  "dependencies": {}
+  "dependencies": {
+    "hercai": "^1.2.4"
+  }
 }
