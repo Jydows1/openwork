@@ -1,5 +1,4 @@
 module.exports = async (req, res) => {
-    // Настройки CORS
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -10,33 +9,36 @@ module.exports = async (req, res) => {
         const { message } = req.body;
         const apiKey = process.env.GEMINI_API_KEY;
 
-        // Прямой запрос к Google API без посредников
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+        // ИСПОЛЬЗУЕМ v1 (Стабильную) вместо v1beta
+        const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+        const response = await fetch(url, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 contents: [{
-                    parts: [{ text: `Ты — помощник тренера по боксу Алексея Климцева. Отвечай кратко. Вопрос пользователя: ${message}` }]
+                    parts: [{ text: `Ты помощник тренера по боксу. Ответь кратко: ${message}` }]
                 }]
             })
         });
 
         const data = await response.json();
 
-        // Проверка на ошибки от самого Google
         if (data.error) {
+            // Если v1 не сработала, пробуем вывести почему
             console.error('Google API Error:', data.error);
-            return res.status(500).json({ reply: "Ошибка API: " + data.error.message });
+            return res.status(data.error.code || 500).json({ 
+                reply: "Извините, сервис временно недоступен.",
+                debug: data.error.message 
+            });
         }
 
-        const botReply = data.candidates[0].content.parts[0].text;
+        const botReply = data.candidates?.[0]?.content?.parts?.[0]?.text || "Я не знаю, что ответить.";
         res.status(200).json({ reply: botReply });
 
     } catch (error) {
         console.error('Fetch Error:', error);
-        res.status(500).json({ reply: "Не удалось связаться с ИИ." });
+        res.status(500).json({ reply: "Произошла ошибка при связи с ИИ." });
     }
 };
 
