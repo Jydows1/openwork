@@ -1,5 +1,6 @@
 {
   "dependencies": {
-    "hercai": "^1.2.4"
+    "hercai": "1.2.4"
   }
 }
+
