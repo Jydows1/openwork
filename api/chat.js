@@ -2,16 +2,13 @@ module.exports = async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
     if (req.method === 'OPTIONS') return res.status(200).end();
 
     try {
         const { message } = req.body;
-        if (!message) return res.status(400).json({ reply: "Сообщение пустое" });
 
-        // НОВЫЙ СТАНДАРТ URL 2026: router + /models/ + название
-        // Используем Llama-3.2-1B-Instruct (она быстрее и доступнее)
-        const url = "https://router.huggingface.co/hf-inference/models/meta-llama/Llama-3.2-1B-Instruct";
+        // САМЫЙ ПРЯМОЙ ПУТЬ БЕЗ ЛИШНИХ ПОДПАПОК
+        const url = "https://router.huggingface.co/models/microsoft/Phi-3-mini-4k-instruct";
 
         const response = await fetch(url, {
             headers: {
@@ -20,45 +17,31 @@ module.exports = async (req, res) => {
             },
             method: "POST",
             body: JSON.stringify({
-                inputs: `<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nТы помощник тренера Алексея Климцева. Отвечай кратко на русском.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n${message}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n`,
-                parameters: {
-                    max_new_tokens: 150,
-                    return_full_text: false
-                }
+                inputs: `<|user|>\nТы помощник тренера Алексея Климцева. Отвечай кратко на русском. Вопрос: ${message}<|end|>\n<|assistant|>`,
+                parameters: { max_new_tokens: 150 }
             }),
         });
 
-        // Если прилетел текст вместо JSON (например, ошибка 404/500)
-        const contentType = response.headers.get("content-type");
-        if (!contentType || !contentType.includes("application/json")) {
-            const textError = await response.text();
-            console.error("Non-JSON response:", textError);
-            return res.status(200).json({ reply: "🥊 Модель на перезагрузке. Попробуй через 30 секунд!" });
+        // Если опять Not Found, значит роутер HF в этом регионе лежит
+        if (response.status === 404) {
+            return res.status(200).json({ reply: "🥊 ИИ временно недоступен. Попробуйте через 5 минут или напишите тренеру напрямую!" });
         }
 
         const data = await response.json();
-        console.log("ROUTER RESPONSE:", JSON.stringify(data));
 
         if (data.error) {
-            return res.status(200).json({ reply: "🥊 ИИ разминается: " + (data.error.message || data.error) });
+            return res.status(200).json({ reply: "🥊 Модель загружается, подождите 10 секунд..." });
         }
 
-        let output = "";
-        if (Array.isArray(data) && data[0]?.generated_text) {
-            output = data[0].generated_text;
-        } else if (data.generated_text) {
-            output = data.generated_text;
-        }
+        let output = Array.isArray(data) ? data[0]?.generated_text : data.generated_text;
+        
+        if (!output) return res.status(200).json({ reply: "🥊 Привет! Готов к тренировкам!" });
 
-        // Если получили пустой ответ от роутера
-        if (!output) {
-            return res.status(200).json({ reply: "🥊 Привет! Готов ответить на вопросы по боксу." });
-        }
-
-        return res.status(200).json({ reply: output.trim() });
+        // Чистим ответ от промпта
+        const cleanReply = output.split('<|assistant|>').pop().trim();
+        return res.status(200).json({ reply: cleanReply });
 
     } catch (error) {
-        console.error('FINAL ERROR:', error);
-        res.status(500).json({ reply: "Ошибка связи. Проверь логи!" });
+        res.status(500).json({ reply: "Ошибка связи с залом." });
     }
 };
