@@ -9,35 +9,40 @@ module.exports = async (req, res) => {
         const { message } = req.body;
         if (!message) return res.status(400).json({ reply: "Сообщение пустое" });
 
-        // МЕНЯЕМ МОДЕЛЬ НА MISTRAL (самая стабильная на HF)
-        const url = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3";
+        // НОВЫЙ СТАНДАРТ URL 2026: router + /models/ + название
+        // Используем Llama-3.2-1B-Instruct (она быстрее и доступнее)
+        const url = "https://router.huggingface.co/hf-inference/models/meta-llama/Llama-3.2-1B-Instruct";
 
         const response = await fetch(url, {
             headers: {
-                Authorization: `Bearer ${process.env.HUGGINGFACE_TOKEN}`,
+                "Authorization": `Bearer ${process.env.HUGGINGFACE_TOKEN}`,
                 "Content-Type": "application/json",
             },
             method: "POST",
             body: JSON.stringify({
-                // Формат промпта для Mistral
-                inputs: `[INST] Ты вежливый помощник тренера по боксу Алексея Климцева. Отвечай кратко на русском языке. Вопрос: ${message} [/INST]`,
+                inputs: `<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nТы помощник тренера Алексея Климцева. Отвечай кратко на русском.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n${message}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n`,
                 parameters: {
-                    max_new_tokens: 200,
-                    return_full_text: false,
-                    temperature: 0.7
+                    max_new_tokens: 150,
+                    return_full_text: false
                 }
             }),
         });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error("HF Error:", errorText);
-            // Если и Mistral выдает 404, попробуем вернуть управление пользователю
-            return res.status(200).json({ reply: "🥊 Тренер на тренировке. Попробуйте спросить чуть позже!" });
+        // Если прилетел текст вместо JSON (например, ошибка 404/500)
+        const contentType = response.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+            const textError = await response.text();
+            console.error("Non-JSON response:", textError);
+            return res.status(200).json({ reply: "🥊 Модель на перезагрузке. Попробуй через 30 секунд!" });
         }
 
         const data = await response.json();
-        
+        console.log("ROUTER RESPONSE:", JSON.stringify(data));
+
+        if (data.error) {
+            return res.status(200).json({ reply: "🥊 ИИ разминается: " + (data.error.message || data.error) });
+        }
+
         let output = "";
         if (Array.isArray(data) && data[0]?.generated_text) {
             output = data[0].generated_text;
@@ -45,14 +50,15 @@ module.exports = async (req, res) => {
             output = data.generated_text;
         }
 
+        // Если получили пустой ответ от роутера
         if (!output) {
-            return res.status(200).json({ reply: "🥊 Привет! Я на связи. Какой вопрос по боксу?" });
+            return res.status(200).json({ reply: "🥊 Привет! Готов ответить на вопросы по боксу." });
         }
 
         return res.status(200).json({ reply: output.trim() });
 
     } catch (error) {
-        console.error('CRITICAL ERROR:', error);
-        res.status(500).json({ reply: "Ошибка связи. Проверьте интернет!" });
+        console.error('FINAL ERROR:', error);
+        res.status(500).json({ reply: "Ошибка связи. Проверь логи!" });
     }
 };
