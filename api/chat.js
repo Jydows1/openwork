@@ -1,12 +1,4 @@
-module.exports = async (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-    if (req.method === 'OPTIONS') return res.status(200).end();
-
-    try {
-        // Замени блок обработки ответа (внутри try) на этот:
+// Замени блок обработки ответа (внутри try) на этот:
 const data = await response.json();
 
 // Посмотрим в логи, что именно прислал HF (поможет нам, если что)
@@ -32,4 +24,3 @@ if (botReply) {
     console.error('Не удалось извлечь текст из:', data);
     return res.status(200).json({ reply: "🥊 Я готов! Спрашивай что угодно про бокс." });
 }
-
